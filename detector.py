@@ -10,6 +10,7 @@ import os
 import configparser
 import cv2
 import numpy as np
+import pandas as pd
 import csv
 import datetime
 from matplotlib.pyplot import plot, ion, show, gcf
@@ -63,12 +64,15 @@ def read_existing_data(filename):
         with open(filename) as csvfile:
             csv_reader = csv.reader(csvfile, delimiter=',')
             for row in csv_reader:
-                print(row)
-                print(row[0] + "X")
-                print(row[1] + "Y")
                 times.append(datetime.datetime.strptime(row[0], "%Y%m%d_%H-%M-%S "))
                 values.append(int(row[1]))
-    return times, values
+    dataframe = pd.DataFrame()
+    dataframe['timestamp'] = pd.Series(dtype='datetime64[ns]')
+    dataframe['value'] = pd.Series(dtype=np.int64)
+    dataframe['timestamp'] = times
+    dataframe['value'] = values
+    dataframe.set_index('timestamp', inplace=True)
+    return dataframe
 
 
 def blur_area(image, top_x, top_y, w, h):
@@ -288,7 +292,7 @@ if __name__ == '__main__':
     ion()
 
     # Initialise with existing reading
-    timestamps, measurements = read_existing_data(countfile)
+    df = read_existing_data(countfile)
 
     # loop while true
     while True:
@@ -306,8 +310,11 @@ if __name__ == '__main__':
         npeople = count_people(idxs, classIDs)
         print("[INFO] People in frame : {}".format(npeople))
         save_count(countfile, npeople)
-        timestamps.append(datetime.datetime.now())
-        measurements.append(npeople)
+
+        # Add row to panda frame
+        new_row = pd.DataFrame([[npeople]], columns = ["value"], index=[pd.to_datetime(datetime.datetime.now())])
+        df = pd.concat([df, pd.DataFrame(new_row)], ignore_index=False)
+
         # Update frame with recognised objects
         frame = update_frame(frame, idxs, classIDs, boxes, confidences, COLORS, LABELS, npeople, showpeopleboxes,
                              blurpeople, showallboxes)
@@ -321,9 +328,10 @@ if __name__ == '__main__':
         
         # Show plot
         gcf().clear()
-        plot(timestamps, measurements)
+        plot(df.index.tolist(), df['value'].tolist())
         gcf().autofmt_xdate()
         show()
+
         # Show frame with bounding boxes on screen
         cv2.imshow('Video', frame)
         # Check for exit
