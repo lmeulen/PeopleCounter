@@ -10,7 +10,9 @@ import os
 import configparser
 import cv2
 import numpy as np
-
+import csv
+import datetime
+from matplotlib.pyplot import plot, ion, show, gcf
 
 def define_args():
     """
@@ -22,10 +24,51 @@ def define_args():
 
 
 def read_config(filename):
+    """
+    Read the configuration file
+    :param filename: Filename of the configuration file
+    :return: configuration object
+    """
     print("[INFO] Reading config: {}".format(filename))
     cfg = configparser.ConfigParser()
     cfg.read(filename)
     return cfg
+
+
+def save_count(filename, n):
+    """
+    Save the specified value to a file.
+    Value is appended to the end of the file
+    Format: <timestamp> , <value>
+    :param filename: filename of targetfile
+    :param n: value to store
+    :return:
+    """
+    timestamp = str(datetime.datetime.now().strftime("%Y%m%d_%H-%M-%S"))
+    f = open(filename, "a")
+    line = "{} , {}\n".format(timestamp, n)
+    f.write(line)
+    f.close()
+
+
+def read_existing_data(filename):
+    """
+    Read existing data from file
+    :param filename: filename of targetfile
+    :return: timestamps, measurements
+    """
+    times = []
+    values = []
+    if os.path.isfile(filename):
+        with open(filename) as csvfile:
+            csv_reader = csv.reader(csvfile, delimiter=',')
+            for row in csv_reader:
+                print(row)
+                print(row[0] + "X")
+                print(row[1] + "Y")
+                times.append(datetime.datetime.strptime(row[0], "%Y%m%d_%H-%M-%S "))
+                values.append(int(row[1]))
+    return times, values
 
 
 def blur_area(image, top_x, top_y, w, h):
@@ -230,12 +273,22 @@ if __name__ == '__main__':
     nw_confidence = float(config['NETWORK']['Confidence'])
     nw_threshold = float(config['NETWORK']['Threshold'])
     print("[INFO] Confidence: {}, Threshold: {} ".format(nw_confidence, nw_threshold))
+    countfile = config['OUTPUT']['Countfile']
     # initialize a list of colors to represent each possible class label
     np.random.seed(42)
     COLORS = np.random.randint(0, 255, size=(len(LABELS), 3), dtype="uint8")
 
     # Initialise video ouptut writer
     (writer, fps) = get_videowriter(config['OUTPUT']['Filename'], W, H, int(config['OUTPUT']['FPS']))
+
+    # Create output windows
+    cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('Video', 600, 600)
+    cv2.moveWindow('Video', 0, 0)
+    ion()
+
+    # Initialise with existing reading
+    timestamps, measurements = read_existing_data(countfile)
 
     # loop while true
     while True:
@@ -252,8 +305,12 @@ if __name__ == '__main__':
         (idxs, classIDs, boxes, confidences) = get_detected_items(layerOutputs, nw_confidence, nw_threshold)
         npeople = count_people(idxs, classIDs)
         print("[INFO] People in frame : {}".format(npeople))
+        save_count(countfile, npeople)
+        timestamps.append(datetime.datetime.now())
+        measurements.append(npeople)
         # Update frame with recognised objects
-        frame = update_frame(frame, idxs, classIDs, boxes, confidences, COLORS, LABELS, npeople, showpeopleboxes, blurpeople, showallboxes)
+        frame = update_frame(frame, idxs, classIDs, boxes, confidences, COLORS, LABELS, npeople, showpeopleboxes,
+                             blurpeople, showallboxes)
         
         end = time.time()
         # write the output frame to disk, repeat (time taken * 30 fps) in order to get a video at real speed
@@ -262,6 +319,11 @@ if __name__ == '__main__':
             for x in range(1, int((end-start)*fps)): 
                 writer.write(frame)
         
+        # Show plot
+        gcf().clear()
+        plot(timestamps, measurements)
+        gcf().autofmt_xdate()
+        show()
         # Show frame with bounding boxes on screen
         cv2.imshow('Video', frame)
         # Check for exit
