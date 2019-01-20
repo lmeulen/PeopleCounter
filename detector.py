@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import csv
 import datetime
-from matplotlib.pyplot import plot, ion, show, gcf
+import matplotlib.pyplot as plt
 
 def define_args():
     """
@@ -251,6 +251,45 @@ def update_frame(frame, idxs, class_ids, boxes, confidences, colors, labels, peo
     return frame
 
 
+def show_plots(data):
+    df_1w = data[data.index >= pd.datetime.now() - pd.Timedelta('7D')]
+    df_1d = df_1w[df_1w.index >= pd.datetime.now() - pd.Timedelta('24H')]
+    df_8h = df_1d[df_1d.index >= pd.datetime.now() - pd.Timedelta('8H')]
+    df_2h = df_8h[df_8h.index >= pd.datetime.now() - pd.Timedelta('2H')]
+    # Resample to smooth the long running graphs
+    df_1w = df_1w.resample('1H').max()
+    df_1d = df_1d.resample('15min').max()
+
+    plt.gcf().clear()
+
+    plt.subplot(2, 2, 1)
+    plt.plot(df_1w.index.tolist(), df_1w['value'].tolist())
+    plt.title("Laatste week")
+    plt.ylabel("Personen")
+    plt.xlabel("Tijdstip")
+
+    plt.subplot(2, 2, 2)
+    plt.plot(df_1d.index.tolist(), df_1d['value'].tolist())
+    plt.title("Afgelopen 24 uur")
+    plt.ylabel("Personen")
+    plt.xlabel("Tijdstip")
+
+    plt.subplot(2, 2, 3)
+    plt.plot(df_8h.index.tolist(), df_8h['value'].tolist())
+    plt.title("Afgelopen 8 uur")
+    plt.ylabel("Personen")
+    plt.xlabel("Tijdstip")
+
+    plt.subplot(2, 2, 4)
+    plt.plot(df_2h.index.tolist(), df_2h['value'].tolist())
+    plt.title("Afgelopen 2 uur")
+    plt.ylabel("Personen")
+    plt.xlabel("Tijdstip")
+
+    plt.gcf().autofmt_xdate()
+    plt.show()
+
+
 if __name__ == '__main__':
     # construct the argument parse and parse the arguments
     args = define_args()
@@ -278,18 +317,22 @@ if __name__ == '__main__':
     nw_threshold = float(config['NETWORK']['Threshold'])
     print("[INFO] Confidence: {}, Threshold: {} ".format(nw_confidence, nw_threshold))
     countfile = config['OUTPUT']['Countfile']
+    save_video = (config['OUTPUT']['SaveVideo'] == "yes")
     # initialize a list of colors to represent each possible class label
     np.random.seed(42)
     COLORS = np.random.randint(0, 255, size=(len(LABELS), 3), dtype="uint8")
 
     # Initialise video ouptut writer
-    (writer, fps) = get_videowriter(config['OUTPUT']['Filename'], W, H, int(config['OUTPUT']['FPS']))
+    if save_video:
+        (writer, fps) = get_videowriter(config['OUTPUT']['Filename'], W, H, int(config['OUTPUT']['FPS']))
 
     # Create output windows
     cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
     cv2.resizeWindow('Video', 600, 600)
     cv2.moveWindow('Video', 0, 0)
-    ion()
+    # Create plot
+    plt.ion()
+    plt.figure(num=None, figsize=(8, 7), dpi=80, facecolor='w', edgecolor='k')
 
     # Initialise with existing reading
     df = read_existing_data(countfile)
@@ -318,22 +361,20 @@ if __name__ == '__main__':
         # Update frame with recognised objects
         frame = update_frame(frame, idxs, classIDs, boxes, confidences, COLORS, LABELS, npeople, showpeopleboxes,
                              blurpeople, showallboxes)
-        
-        end = time.time()
-        # write the output frame to disk, repeat (time taken * 30 fps) in order to get a video at real speed
-        writer.write(frame)
-        if webcam and realspeed:
-            for x in range(1, int((end-start)*fps)): 
-                writer.write(frame)
-        
-        # Show plot
-        gcf().clear()
-        plot(df.index.tolist(), df['value'].tolist())
-        gcf().autofmt_xdate()
-        show()
 
+        # Show plot
+        show_plots(df)
         # Show frame with bounding boxes on screen
         cv2.imshow('Video', frame)
+
+        end = time.time()
+        # write the output frame to disk, repeat (time taken * 30 fps) in order to get a video at real speed
+        if save_video:
+            writer.write(frame)
+            if webcam and realspeed:
+                for x in range(1, int((end-start)*fps)):
+                    writer.write(frame)
+
         # Check for exit
         if cv2.waitKey(25) & 0xFF == ord('q'):
             break
