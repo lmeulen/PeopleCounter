@@ -374,6 +374,8 @@ if __name__ == '__main__':
         (cam, W, H) = get_filesource(config['READER']['Filename'])
 
     # determine if we need to show the enclosing boxes, etc
+    network_path = config['NETWORK']['Path']
+    webcam = (config['READER']['Webcam'] == "yes")
     showpeopleboxes = (config['OUTPUT']['ShowPeopleBoxes'] == "yes")
     showallboxes = (config['OUTPUT']['ShowAllBoxes'] == "yes")
     blurpeople = (config['OUTPUT']['BlurPeople'] == "yes")
