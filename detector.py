@@ -15,6 +15,7 @@ import csv
 import datetime
 import matplotlib.pyplot as plt
 
+
 def define_args():
     """
     Specify the arguments of the application
@@ -252,6 +253,11 @@ def update_frame(frame, idxs, class_ids, boxes, confidences, colors, labels, peo
 
 
 def show_plots(data):
+    """
+    Show the graphs with historical data
+    :param data: dataframe
+    :return:
+    """
     df_1w = data[data.index >= pd.datetime.now() - pd.Timedelta('7D')]
     df_1d = df_1w[df_1w.index >= pd.datetime.now() - pd.Timedelta('24H')]
     df_8h = df_1d[df_1d.index >= pd.datetime.now() - pd.Timedelta('8H')]
@@ -318,6 +324,7 @@ if __name__ == '__main__':
     print("[INFO] Confidence: {}, Threshold: {} ".format(nw_confidence, nw_threshold))
     countfile = config['OUTPUT']['Countfile']
     save_video = (config['OUTPUT']['SaveVideo'] == "yes")
+    show_graphs = (config['OUTPUT']['ShowGraphs'] == "yes")
     # initialize a list of colors to represent each possible class label
     np.random.seed(42)
     COLORS = np.random.randint(0, 255, size=(len(LABELS), 3), dtype="uint8")
@@ -325,17 +332,20 @@ if __name__ == '__main__':
     # Initialise video ouptut writer
     if save_video:
         (writer, fps) = get_videowriter(config['OUTPUT']['Filename'], W, H, int(config['OUTPUT']['FPS']))
+    else:
+        (writer, fps) = (None, 0)
 
     # Create output windows
     cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
     cv2.resizeWindow('Video', 600, 600)
     cv2.moveWindow('Video', 0, 0)
     # Create plot
-    plt.ion()
-    plt.figure(num=None, figsize=(8, 7), dpi=80, facecolor='w', edgecolor='k')
-
-    # Initialise with existing reading
-    df = read_existing_data(countfile)
+    if show_graphs:
+        plt.ion()
+        plt.figure(num=None, figsize=(8, 7), dpi=80, facecolor='w', edgecolor='k')
+        df = read_existing_data(countfile)
+    else:
+        df = None
 
     # loop while true
     while True:
@@ -354,16 +364,17 @@ if __name__ == '__main__':
         print("[INFO] People in frame : {}".format(npeople))
         save_count(countfile, npeople)
 
-        # Add row to panda frame
-        new_row = pd.DataFrame([[npeople]], columns = ["value"], index=[pd.to_datetime(datetime.datetime.now())])
-        df = pd.concat([df, pd.DataFrame(new_row)], ignore_index=False)
-
         # Update frame with recognised objects
         frame = update_frame(frame, idxs, classIDs, boxes, confidences, COLORS, LABELS, npeople, showpeopleboxes,
                              blurpeople, showallboxes)
 
-        # Show plot
-        show_plots(df)
+        if show_graphs:
+            # Add row to panda frame
+            new_row = pd.DataFrame([[npeople]], columns = ["value"], index=[pd.to_datetime(datetime.datetime.now())])
+            df = pd.concat([df, pd.DataFrame(new_row)], ignore_index=False)
+            # Show plot
+            show_plots(df)
+
         # Show frame with bounding boxes on screen
         cv2.imshow('Video', frame)
 
