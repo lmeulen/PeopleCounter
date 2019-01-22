@@ -17,11 +17,13 @@ import configparser
 import csv
 import datetime
 
+from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import requests
 import cv2
+
 
 def define_args():
     """
@@ -60,6 +62,26 @@ def download_if_not_present(url, file_name):
                 sys.stdout.write("\n")
                 sys.stdout.flush()
 
+
+def print_ascii_large(text, font_size=18):
+    """
+    Print large tekst in ASCII art style
+    :param text: Text to print
+    :param font_size: Font size (default = 18)
+    :return:
+    """
+    myfont = ImageFont.truetype("verdanab.ttf", font_size)
+    img = Image.new("1", myfont.getsize(text), "black")
+    draw = ImageDraw.Draw(img)
+    draw.text((0, 0), text, "white", font=myfont)
+    pixels = np.array(img, dtype=np.uint8)
+    chars = np.array([' ', '#'], dtype="U1")[pixels]
+    strings = chars.view('U' + str(chars.shape[1])).flatten()
+    print()
+    for s in strings:
+        if len(s.strip()) > 0:
+            print(s)
+    print()
 
 def read_config(filename):
     """
@@ -386,6 +408,7 @@ if __name__ == '__main__':
     countfile = config['OUTPUT']['Countfile']
     save_video = (config['OUTPUT']['SaveVideo'] == "yes")
     show_graphs = (config['OUTPUT']['ShowGraphs'] == "yes")
+    print_ascii = (config['OUTPUT']['PrintAscii'] == "yes")
     buffer_size = int(config['READER']['Buffersize'])
     # initialize a list of colors to represent each possible class label
     np.random.seed(42)
@@ -417,7 +440,7 @@ if __name__ == '__main__':
         # read the next frame from the webcam
         # make sure that buffer is empty by reading specified amount of frames
         for _ in (0, buffer_size):
-            (grabbed, frame) = cam.read()  # type: (object, object)
+            (grabbed, frame) = cam.read()  # type: (bool, np.ndarray)
         if not grabbed:
             break
         # Feed frame to network
@@ -447,13 +470,16 @@ if __name__ == '__main__':
         end = time.time()
         print("[INFO] Total handling  : %2.1f sec" % (end - start))
         print("[INFO] People in frame : {}".format(npeople))
-
+        if print_ascii:
+            print_ascii_large(str(npeople)+ (" persons" if npeople > 1 else " person"))
         # Check for exit
         if cv2.waitKey(25) & 0xFF == ord('q'):
             break
 
     # release the file pointers
     print("[INFO] cleaning up...")
+
+
     if save_video:
         writer.release()
     cam.release()
