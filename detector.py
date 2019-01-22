@@ -49,14 +49,16 @@ def download_if_not_present(url, file_name):
                 # no content length header
                 f.write(response.content)
             else:
+                print_file_name = "..." + file_name[-17:] if len(file_name) > 20 else file_name
+                print_file_name = "{:<20}".format(print_file_name)
                 downloaded = 0
                 total_length = int(total_length)
                 for data in response.iter_content(chunk_size=4096):
                     downloaded += len(data)
                     f.write(data)
-                    percentage = int(100 * downloaded / total_length)
-                    progress = int(50 * downloaded / total_length)
-                    sys.stdout.write("\rDownloading {} [{} {}] {}%".format(file_name, '=' * progress,
+                    percentage = min(int(100 * downloaded / total_length), 100)
+                    progress = min(int(50 * downloaded / total_length), 50)
+                    sys.stdout.write("\rDownloading {} [{} {}] {}%".format(print_file_name, '=' * progress,
                                                                            ' ' * (50-progress), percentage))
                     sys.stdout.flush()
                 sys.stdout.write("\n")
@@ -182,6 +184,7 @@ def load_network(network_folder):
     """
     # Derive file paths and check existance
     labelspath = os.path.sep.join([network_folder, "coco.names"])
+    download_if_not_present("https://github.com/pjreddie/darknet/blob/master/data/coco.names?raw=true", labelspath)
     if not os.path.isfile(labelspath):
         print("[ERROR] Network: Labels file \"{}\" not found.".format(labelspath))
         exit()
@@ -193,7 +196,7 @@ def load_network(network_folder):
         exit()
 
     configpath = os.path.sep.join([network_folder, "yolov3.cfg"])
-    download_if_not_present("https://github.com/pjreddie/darknet/blob/master/cfg/yolov3.cfg", configpath)
+    download_if_not_present("https://github.com/pjreddie/darknet/blob/master/cfg/yolov3.cfg?raw=true", configpath)
     if not os.path.isfile(configpath):
         print("[ERROR] Network: Configuration file \"{}\" not found.".format(configpath))
         exit()
