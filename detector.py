@@ -16,6 +16,7 @@ import sys
 import configparser
 import csv
 import datetime
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -186,16 +187,16 @@ def load_network(network_folder):
     return network, names, labels
 
 
-def get_detected_items(layeroutputs, confidence_level, threshold):
+def get_detected_items(layeroutputs, confidence_level, threshold, img_width, img_height):
     """
     Determine the objects as found by the network. Found objects are filtered
     on confidence leven and threshold.
     """
 
     # initialize our lists of detected bounding boxes, confidences, and class IDs
-    boxes = []
-    confidences = []
-    classids = []
+    detected_boxes = []
+    detection_confidences = []
+    detected_classes = []
 
     for output in layeroutputs:
         # loop over each of the detections
@@ -208,7 +209,7 @@ def get_detected_items(layeroutputs, confidence_level, threshold):
             # filter out weak predictions by ensuring the detected probability is greater than the minimum probability
             if confidence > confidence_level:
                 # scale the bounding box coordinates back relative to the size of the image
-                box = detection[0:4] * np.array([W, H, W, H])
+                box = detection[0:4] * np.array([img_width, img_height, img_width, img_height])
                 (center_x, center_y, width, height) = box.astype("int")
 
                 # use the center (x, y)-coordinates to derive the top left corner of the bounding box
@@ -216,14 +217,14 @@ def get_detected_items(layeroutputs, confidence_level, threshold):
                 top_y = int(center_y - (height / 2))
 
                 # update our list of bounding box coordinates, confidences, and class IDs
-                boxes.append([top_x, top_y, int(width), int(height)])
-                confidences.append(float(confidence))
-                classids.append(classid)
+                detected_boxes.append([top_x, top_y, int(width), int(height)])
+                detection_confidences.append(float(confidence))
+                detected_classes.append(classid)
 
     # apply non-maxima suppression to suppress weak, overlapping bounding boxes
-    indexes = cv2.dnn.NMSBoxes(boxes, confidences, confidence_level, threshold)
+    indexes = cv2.dnn.NMSBoxes(detected_boxes, detection_confidences, confidence_level, threshold)
 
-    return indexes, classids, boxes, confidences
+    return indexes, detected_classes, detected_boxes, detection_confidences
 
 
 def get_videowriter(outputfile, width, height, frames_per_sec=30):
@@ -277,7 +278,7 @@ def get_filesource(filename):
     return video_device, width, height
 
 
-def update_frame(frame, idxs, class_ids, boxes, confidences, colors, labels,
+def update_frame(image, people_indxs, class_ids, detected_boxes, conf_levels, colors, labels,
                  show_boxes, blur, box_all_objects):
     """
     Add bounding boxes and counted number of people to the frame
@@ -285,29 +286,29 @@ def update_frame(frame, idxs, class_ids, boxes, confidences, colors, labels,
     """
     # ensure at least one detection exists
     count_people = 0
-    if len(idxs) >= 1:
+    if len(people_indxs) >= 1:
         # loop over the indexes we are keeping
-        for i in idxs.flatten():
+        for i in people_indxs.flatten():
             # extract the bounding box coordinates
-            (x, y, w, h) = (boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3])
+            (x, y, w, h) = (detected_boxes[i][0], detected_boxes[i][1], detected_boxes[i][2], detected_boxes[i][3])
 
             if classIDs[i] == 0:
                 count_people += 1
                 # Blur, if required, people in the image
                 if blur:
-                    frame = blur_area(frame, max(x, 0), max(y, 0), w, h)
+                    image = blur_area(image, max(x, 0), max(y, 0), w, h)
 
             # draw a bounding box rectangle and label on the frame
             if (show_boxes and classIDs[i] == 0) or box_all_objects:
                 color = [int(c) for c in colors[class_ids[i]]]
-                cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-                text = "{}: {:.4f}".format(labels[classIDs[i]], confidences[i])
-                cv2.putText(frame, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
+                text = "{}: {:.2f}".format(labels[classIDs[i]], conf_levels[i])
+                cv2.putText(image, text, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
     # write number of people in bottom corner
     text = "Persons: {}".format(count_people)
-    cv2.putText(frame, text, (10, H - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-    return frame, count_people
+    cv2.putText(image, text, (10, image.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    return image, count_people
 
 
 def show_plots(data):
@@ -371,7 +372,7 @@ if __name__ == '__main__':
         cam_height = int(config['READER']['Height'])
         (cam, W, H) = get_webcamesource(cam_id, cam_width, cam_height)
     else:
-        (cam, W, H) = get_filesource(config['READER']['Filename'])
+        (cam, cam_width, cam_height) = get_filesource(config['READER']['Filename'])
 
     # determine if we need to show the enclosing boxes, etc
     network_path = config['NETWORK']['Path']
@@ -385,19 +386,22 @@ if __name__ == '__main__':
     countfile = config['OUTPUT']['Countfile']
     save_video = (config['OUTPUT']['SaveVideo'] == "yes")
     show_graphs = (config['OUTPUT']['ShowGraphs'] == "yes")
+    buffer_size = int(config['READER']['Buffersize'])
     # initialize a list of colors to represent each possible class label
     np.random.seed(42)
     COLORS = np.random.randint(0, 255, size=(len(LABELS), 3), dtype="uint8")
 
     # Initialise video ouptut writer
     if save_video:
-        (writer, fps) = get_videowriter(config['OUTPUT']['Filename'], W, H, int(config['OUTPUT']['FPS']))
+        (writer, fps) = get_videowriter(config['OUTPUT']['Filename'], cam_width, cam_height,
+                                        int(config['OUTPUT']['FPS']))
     else:
         (writer, fps) = (None, 0)
 
-    # Create output windows
+    # Create output windows, but limit on 1440x810
     cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('Video', 600, 600)
+    cv2.resizeWindow('Video', min(cam_width, 1440), min(cam_height, 810))
+    #cv2.resizeWindow('Video', min(cam_width, 640), min(cam_height, 360))
     cv2.moveWindow('Video', 0, 0)
     # Create plot
     if show_graphs:
@@ -411,13 +415,16 @@ if __name__ == '__main__':
     while True:
         start = time.time()
         # read the next frame from the webcam
-        (grabbed, frame) = cam.read()  # type: (object, object)
+        # make sure that buffer is empty by reading specified amount of frames
+        for _ in (0, buffer_size):
+            (grabbed, frame) = cam.read()  # type: (object, object)
         if not grabbed:
             break
         # Feed frame to network
         layerOutputs = execute_network(frame, net, ln)
         # Obtain detected objects, including cof levels and bounding boxes
-        (idxs, classIDs, boxes, confidences) = get_detected_items(layerOutputs, nw_confidence, nw_threshold)
+        (idxs, classIDs, boxes, confidences) = get_detected_items(layerOutputs, nw_confidence, nw_threshold,
+                                                                  cam_width, cam_height)
 
         # Update frame with recognised objects
         frame, npeople = update_frame(frame, idxs, classIDs, boxes, confidences, COLORS, LABELS, showpeopleboxes,
